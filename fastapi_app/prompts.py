@@ -22,7 +22,6 @@ User description: {query}
 
 Respond ONLY with valid JSON. No extra text.
 """
-
 EXTRACTION_PROMPT_V2 = EXTRACTION_PROMPT_V1  # Use the same for now, or create a variant
 
 EXTRACTION_PROMPT = EXTRACTION_PROMPT_V1
