@@ -3,7 +3,7 @@ import requests
 import json
 import os
 
-API_URL = os.getenv("API_URL", "realstate-agent-production.up.railway.app/predict")
+API_URL = "https://realstate-agent-production.up.railway.app/predict"
 
 st.set_page_config(page_title="AI Real Estate Agent", page_icon="🏡")
 st.title("🏡 AI Real Estate Agent")
