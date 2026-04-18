@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .venv/
 venv/.env
+scripts/test_groq.py

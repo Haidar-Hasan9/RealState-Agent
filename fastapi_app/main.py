@@ -12,17 +12,16 @@ from src.schemas import PredictionRequest, PredictionResponse, ExtractedFeatures
 from src.model_loader import load_model
 from fastapi_app.prompts import EXTRACTION_PROMPT, INTERPRETATION_PROMPT
 
-# ------------------------------------------------------------------
-# Load environment variables from the project root .env file
-# ------------------------------------------------------------------
+
+# Load .env from project root (absolute path)
 env_path = Path(__file__).parent.parent / '.env'
-print(f"Looking for .env at: {env_path}")
 if env_path.exists():
-    load_dotenv(dotenv_path=env_path)
-    print(".env file loaded.")
+    # Use utf-8-sig to handle any BOM character
+    with open(env_path, encoding='utf-8-sig') as f:
+        load_dotenv(stream=f)
+    print(".env file loaded successfully.")
 else:
     print("WARNING: .env file not found!")
-
 # ------------------------------------------------------------------
 # Configure Groq client
 # ------------------------------------------------------------------
@@ -73,7 +72,7 @@ def call_llm(prompt: str, temperature: float = 0.0) -> str:
 async def predict(request: PredictionRequest):
     query = request.query
 
-    # -------------------- Stage 1: Feature Extraction --------------------
+    # Stage 1: Feature Extraction
     try:
         extraction_prompt = EXTRACTION_PROMPT.format(query=query)
         content = call_llm(extraction_prompt, temperature=0.0)
@@ -81,12 +80,11 @@ async def predict(request: PredictionRequest):
         if not content:
             raise ValueError("Groq returned an empty response")
 
-        # Extract the JSON object from the response (robust against markdown fences)
+        # Extract JSON object
         json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
             json_str = json_match.group(0)
         else:
-            # Fallback: remove markdown fences manually
             if content.startswith("```json"):
                 content = content[7:]
             if content.endswith("```"):
@@ -94,6 +92,17 @@ async def predict(request: PredictionRequest):
             json_str = content.strip()
 
         extracted_dict = json.loads(json_str)
+
+        # Apply manual overrides if provided
+        if request.manual_overrides:
+            for key, value in request.manual_overrides.items():
+                if key in extracted_dict:
+                    extracted_dict[key] = value
+                    if 'completeness' in extracted_dict and key in extracted_dict['completeness']:
+                        extracted_dict['completeness'][key] = True
+                    if 'missing_features' in extracted_dict and key in extracted_dict['missing_features']:
+                        extracted_dict['missing_features'].remove(key)
+
         extracted = ExtractedFeatures(**extracted_dict)
 
     except Exception as e:
@@ -101,40 +110,38 @@ async def predict(request: PredictionRequest):
         print(str(e))
         raise HTTPException(status_code=422, detail=f"LLM extraction failed: {str(e)}")
 
-    # -------------------- Stage 2: ML Prediction --------------------
-        # Prepare input for ML model
+    # Stage 2: ML Prediction
     input_data = extracted.dict(by_alias=True, exclude={'completeness', 'missing_features'})
     input_df = pd.DataFrame([input_data])
-    
-    # Replace Python None with np.nan so SimpleImputer can fill missing values
     input_df = input_df.replace({None: np.nan})
-    
     expected_cols = ml_model.feature_names_in_
     input_df = input_df[expected_cols]
 
     pred_log = ml_model.predict(input_df)[0]
-    pred_price = float(np.expm1(pred_log))   # Convert from log1p scale
+    pred_price = float(np.expm1(pred_log))
 
-    # -------------------- Stage 3: Interpretation --------------------
+    # Stage 3: Interpretation
     try:
-        interpretation_prompt = INTERPRETATION_PROMPT.format(
-            query=query,
-            price=pred_price,
+        interp_prompt = INTERPRETATION_PROMPT.format(
+            features=json.dumps(input_data, indent=2),
+            prediction=pred_price,
             median_price=TRAIN_STATS['median_price'],
             price_std=TRAIN_STATS['price_std']
         )
-        interpretation = call_llm(interpretation_prompt, temperature=0.3)   # Slightly creative
-
-        if not interpretation:
-            interpretation = "No interpretation could be generated."
-
+        interpretation = call_llm(interp_prompt, temperature=0.3)
     except Exception as e:
-        print("=== LLM INTERPRETATION ERROR ===")
+        print("=== LLM INTERPRETATION ERROR (using fallback) ===")
         print(str(e))
-        # Interpretation is non‑critical – fallback to a generic message
-        interpretation = "Interpretation service is temporarily unavailable."
+        median = TRAIN_STATS['median_price']
+        std = TRAIN_STATS['price_std']
+        if pred_price > median + std:
+            interpretation = f"The predicted price of ${pred_price:,.2f} is significantly above the market median (${median:,.2f}). This suggests the property has desirable features like larger living area or better quality."
+        elif pred_price < median - std:
+            interpretation = f"The predicted price of ${pred_price:,.2f} is below the market median (${median:,.2f}). This may reflect smaller size or lower condition ratings."
+        else:
+            interpretation = f"The predicted price of ${pred_price:,.2f} is within the typical range (median ${median:,.2f}). The property appears to be a standard offering for the area."
 
-    # ------------------------------------------------------------------
+    # THIS WAS MISSING!
     return PredictionResponse(
         extracted=extracted,
         predicted_price=pred_price,

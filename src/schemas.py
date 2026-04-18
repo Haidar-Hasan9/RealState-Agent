@@ -1,5 +1,5 @@
 ﻿from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 class ExtractedFeatures(BaseModel):
     # Numeric
@@ -25,6 +25,7 @@ class ExtractedFeatures(BaseModel):
 
 class PredictionRequest(BaseModel):
     query: str
+    manual_overrides: Optional[Dict[str, Any]] = None
 
 class PredictionResponse(BaseModel):
     extracted: ExtractedFeatures

@@ -22,6 +22,14 @@ User description: {query}
 
 Respond ONLY with valid JSON. No extra text.
 """
-EXTRACTION_PROMPT_V2 = EXTRACTION_PROMPT_V1  # Use the same for now, or create a variant
 
+EXTRACTION_PROMPT_V2 = EXTRACTION_PROMPT_V1
 EXTRACTION_PROMPT = EXTRACTION_PROMPT_V1
+
+INTERPRETATION_PROMPT = """
+You are a real estate analyst. Given these property features:
+{features}
+The predicted sale price is ${prediction:,.2f}.
+Market median price is ${median_price:,.2f} with standard deviation ${price_std:,.2f}.
+Provide a concise interpretation (2-4 sentences) explaining whether the price is above/below median and what features likely influenced it.
+"""
