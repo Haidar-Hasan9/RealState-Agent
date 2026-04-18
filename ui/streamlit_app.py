@@ -3,7 +3,9 @@ import requests
 import json
 import os
 
-API_URL = os.getenv("API_URL", "realstate-agent-production.up.railway.app/predict")
+import streamlit as st
+
+API_URL = st.secrets.get("API_URL", "http://localhost:8000/predict")
 
 st.set_page_config(page_title="AI Real Estate Agent", page_icon="🏡")
 st.title("🏡 AI Real Estate Agent")
